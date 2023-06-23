@@ -1,0 +1,399 @@
+-- FUNCTION: public.get_first_row_session(character varying, date)
+
+-- DROP FUNCTION IF EXISTS public.get_first_row_session(character varying, date);
+
+CREATE OR REPLACE FUNCTION public.get_first_row_session(
+	telegram_id character varying,
+	date_search date)
+    RETURNS TABLE(var_surname character varying, var_first_name character varying, var_second_name character varying, var_name_group character varying, var_code_speciality character varying, var_name_speciality character varying, var_start_session date, var_end_session date, var_name_type_session character varying, var_name_form_study character varying, var_name_level character varying, var_name_employer character varying) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+BEGIN
+	RETURN QUERY SELECT surname, first_name, second_name, name_group, code_speciality, name_speciality, 
+			start_session, end_session, name_type_session, name_form_study, name_level, name_employer
+			FROM students s 
+			JOIN users_tgb u ON u.student_id = s.student_id
+			JOIN groups_student gs ON gs.group_id = s.group_id
+			JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+			JOIN sessions sess ON sess.group_id = gs.group_id
+			JOIN type_sessions ts ON ts.type_session_id = sess.type_session_id
+			JOIN form_studies fst ON fst.form_study_id = gs.form_study_id
+			JOIN level_education le ON le.level_id = sp.level_id
+			JOIN employements emp ON emp.student_id = s.student_id
+			JOIN employers em ON em.employer_id = emp.employer_id
+			WHERE id_telegram = $1 and start_session > $2
+			ORDER BY start_session ASC
+			LIMIT 1;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_first_row_session(character varying, date)
+    OWNER TO postgres;
+
+
+-- FUNCTION: public.get_document(date, character varying)
+
+-- DROP FUNCTION IF EXISTS public.get_document(date, character varying);
+
+CREATE OR REPLACE FUNCTION public.get_document(
+	var_date_doc date,
+	var_telegram_id character varying)
+    RETURNS SETOF stored_documents 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+BEGIN
+	RETURN QUERY select document_id, sd.session_id, sd.student_id, sd.date_document from stored_documents sd
+	JOIN students st ON st.student_id = sd.student_id
+	JOIN users_tgb u ON u.student_id = st.student_id
+	JOIN sessions s ON s.session_id = sd.session_id
+	WHERE u.id_telegram = $2 and s.start_session > $1
+	ORDER BY date_document ASC
+	LIMIT 1;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_document(date, character varying)
+    OWNER TO postgres;
+
+-- FUNCTION: public.get_data_for_document_test(character varying, date)
+
+-- DROP FUNCTION IF EXISTS public.get_data_for_document_test(character varying, date);
+
+CREATE OR REPLACE FUNCTION public.get_data_for_document_test(
+	var_telegram_id character varying,
+	var_date_search date)
+    RETURNS TABLE(var_surname character varying, var_first_name character varying, var_second_name character varying, var_document_id integer, var_code_speciality character varying, var_name_speciality character varying, var_start_session date, var_end_session date, var_name_type_session character varying, var_name_form_study character varying, var_name_level character varying, var_name_employer character varying, var_name_group character varying, var_date_document date) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+DECLARE
+var_session_id int;
+var_student_id int;
+
+BEGIN
+	IF NOT EXISTS (select * from get_document($2, $1))
+	THEN
+		BEGIN
+			SELECT session_id INTO var_session_id
+						   FROM students s
+						   JOIN users_tgb u ON u.student_id = s.student_id
+						   JOIN groups_student gs ON gs.group_id = s.group_id
+						   JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+						   JOIN sessions sess ON sess.group_id = gs.group_id
+						   WHERE id_telegram = $1 and start_session > $2
+						   ORDER BY start_session
+						   LIMIT 1;
+
+			SELECT student_id INTO var_student_id FROM users_tgb WHERE id_telegram = $1;
+
+			CALL add_document(var_session_id,
+						  var_student_id,
+						  $2);
+		END;
+	END IF;
+
+	RETURN QUERY SELECT
+						surname, 			--0 фамилия
+						first_name, 		--1 имя
+						second_name, 		--2 отчества
+						document_id, 		--3 номер документа
+						code_speciality, 	--4 код специальности
+						name_speciality, 	--5 наименование специальности
+						start_session, 		--6 начало сессии
+						end_session, 		--7 конец сессии
+						name_type_session, 	--8 тип сессии
+						name_form_study, 	--9 форма обучения
+						name_level, 		--10 уровень обучения
+						name_employer,		--11 работодатель
+						name_group,			--12 группа
+						date_document       --13 дата документа
+			FROM stored_documents sd
+			JOIN students s ON s.student_id = sd.student_id
+			JOIN users_tgb u ON u.student_id = s.student_id
+			JOIN groups_student gs ON gs.group_id = s.group_id
+			JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+			JOIN sessions sess ON sess.session_id = sd.session_id
+			JOIN type_sessions ts ON ts.type_session_id = sess.type_session_id
+			JOIN form_studies fst ON fst.form_study_id = gs.form_study_id
+			JOIN level_education le ON le.level_id = sp.level_id
+			JOIN employements emp ON emp.student_id = s.student_id
+			JOIN employers em ON em.employer_id = emp.employer_id
+			WHERE id_telegram = $1 and start_session > $2
+			ORDER BY start_session ASC;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_data_for_document_test(character varying, date)
+    OWNER TO postgres;
+
+
+
+-- FUNCTION: public.get_data_for_document(character varying, date)
+
+-- DROP FUNCTION IF EXISTS public.get_data_for_document(character varying, date);
+
+CREATE OR REPLACE FUNCTION public.get_data_for_document(
+	var_telegram_id character varying,
+	var_date_search date)
+    RETURNS TABLE(var_surname character varying, var_first_name character varying, var_second_name character varying, var_document_id integer, var_code_speciality character varying, var_name_speciality character varying, var_start_session date, var_end_session date, var_name_type_session character varying, var_name_form_study character varying, var_name_level character varying, var_name_employer character varying, var_name_group character varying, var_date_document date) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+DECLARE 
+var_session_id int;
+var_student_id int;
+
+BEGIN
+	IF NOT EXISTS (select * from get_document($2, $1))
+	THEN 
+		BEGIN
+			SELECT session_id INTO var_session_id
+						   FROM students s
+						   JOIN users_tgb u ON u.student_id = s.student_id
+						   JOIN groups_student gs ON gs.group_id = s.group_id
+						   JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+						   JOIN sessions sess ON sess.group_id = gs.group_id
+						   WHERE id_telegram = $1 and start_session > $2
+						   ORDER BY start_session
+						   LIMIT 1;
+	
+			SELECT student_id INTO var_student_id FROM users_tgb WHERE id_telegram = $1;
+
+			CALL add_document(var_session_id, 
+						  var_student_id, 
+						  $2);
+		END;
+	END IF;
+	
+	RETURN QUERY SELECT
+						surname, 			--0 фамилия
+						first_name, 		--1 имя
+						second_name, 		--2 отчества
+						document_id, 		--3 номер документа
+						code_speciality, 	--4 код специальности
+						name_speciality, 	--5 наименование специальности
+						start_session, 		--6 начало сессии
+						end_session, 		--7 конец сессии
+						name_type_session, 	--8 тип сессии
+						name_form_study, 	--9 форма обучения
+						name_level, 		--10 уровень обучения
+						name_employer,		--11 работодатель
+						name_group,			--12 группа
+						date_document       --13 дата документа
+			FROM stored_documents sd
+			JOIN students s ON s.student_id = sd.student_id
+			JOIN users_tgb u ON u.student_id = s.student_id
+			JOIN groups_student gs ON gs.group_id = s.group_id
+			JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+			JOIN sessions sess ON sess.session_id = sd.session_id
+			JOIN type_sessions ts ON ts.type_session_id = sess.type_session_id
+			JOIN form_studies fst ON fst.form_study_id = gs.form_study_id
+			JOIN level_education le ON le.level_id = sp.level_id
+			JOIN employements emp ON emp.student_id = s.student_id
+			JOIN employers em ON em.employer_id = emp.employer_id
+			WHERE id_telegram = $1 and start_session > $2
+			ORDER BY start_session ASC;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_data_for_document(character varying, date)
+    OWNER TO postgres;
+
+
+
+-- FUNCTION: public.get_all_data(character varying, date)
+
+-- DROP FUNCTION IF EXISTS public.get_all_data(character varying, date);
+
+CREATE OR REPLACE FUNCTION public.get_all_data(
+	var_telegram_id character varying,
+	var_date_search date)
+    RETURNS TABLE(var_surname character varying, var_first_name character varying, var_second_name character varying, var_name_group character varying, var_code_speciality character varying, var_name_speciality character varying, var_start_session date, var_end_session date, var_name_type_session character varying, var_name_form_study character varying, var_name_level character varying, var_name_employer character varying) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+DECLARE 
+var_session_id int;
+var_student_id int;
+
+BEGIN
+	IF NOT EXISTS (select * from get_document($2, $1))
+	THEN 
+		BEGIN
+			SELECT session_id INTO var_session_id
+						   FROM students s
+						   JOIN users_tgb u ON u.student_id = s.student_id
+						   JOIN groups_student gs ON gs.group_id = s.group_id
+						   JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+						   JOIN sessions sess ON sess.group_id = gs.group_id
+						   WHERE id_telegram = $1 and start_session > $2
+						   ORDER BY start_session
+						   LIMIT 1;
+	
+			SELECT student_id INTO var_student_id FROM users_tgb WHERE id_telegram = $1;
+
+			CALL add_document(var_session_id, 
+						  var_student_id, 
+						  $2);
+		END;
+	END IF;
+	
+	RETURN QUERY SELECT surname, first_name, second_name, name_group, code_speciality, name_speciality, 
+			start_session, end_session, name_type_session, name_form_study, name_level, name_employer
+			FROM students s
+			JOIN users_tgb u ON u.student_id = s.student_id
+			JOIN groups_student gs ON gs.group_id = s.group_id
+			JOIN specialities sp ON sp.speciality_id = gs.speciality_id
+			JOIN sessions sess ON sess.group_id = gs.group_id
+			JOIN type_sessions ts ON ts.type_session_id = sess.type_session_id
+			JOIN form_studies fst ON fst.form_study_id = gs.form_study_id
+			JOIN level_education le ON le.level_id = sp.level_id
+			JOIN employements emp ON emp.student_id = s.student_id
+			JOIN employers em ON em.employer_id = emp.employer_id
+			WHERE id_telegram = $1 and start_session > $2
+			ORDER BY start_session ASC;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_all_data(character varying, date)
+    OWNER TO postgres;
+
+
+-- FUNCTION: public.check_id_telegram_user(character varying)
+
+-- DROP FUNCTION IF EXISTS public.check_id_telegram_user(character varying);
+
+CREATE OR REPLACE FUNCTION public.check_id_telegram_user(
+	login_user character varying)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+	IF (SELECT COUNT(*) from users_tgb WHERE id_telegram = $1)>0
+		THEN
+			RETURN True;
+		ELSE  
+			RETURN False;
+	END IF;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_id_telegram_user(character varying)
+    OWNER TO postgres;
+
+
+-- FUNCTION: public.check_data_user(character varying, character varying)
+
+-- DROP FUNCTION IF EXISTS public.check_data_user(character varying, character varying);
+
+CREATE OR REPLACE FUNCTION public.check_data_user(
+	login_user character varying,
+	password_user character varying)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+	IF (SELECT COUNT(*) from users_tgb WHERE login_tgb = $1 and password_tgb = $2)>0
+		THEN
+			RETURN True;
+		ELSE  
+			RETURN False;
+	END IF;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_data_user(character varying, character varying)
+    OWNER TO postgres;
+
+
+
+-- FUNCTION: public.add_id_usertg(character varying, character varying, character varying)
+
+-- DROP FUNCTION IF EXISTS public.add_id_usertg(character varying, character varying, character varying);
+
+CREATE OR REPLACE FUNCTION public.add_id_usertg(
+	login_user character varying,
+	password_user character varying,
+	telegram_id character varying)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+	IF (SELECT COUNT(*) from users_tgb WHERE login_tgb = $1 and password_tgb=$2)>0
+		THEN
+			UPDATE users_tgb 
+			SET id_telegram = $3
+			WHERE login_tgb = $1;
+			RETURN True;
+		ELSE  
+			RETURN False;
+	END IF;
+END;
+$BODY$;
+
+ALTER FUNCTION public.add_id_usertg(character varying, character varying, character varying)
+    OWNER TO postgres;
+
+
+
+
+-- PROCEDURE: public.add_id_usertg(character varying, character varying)
+
+-- DROP PROCEDURE IF EXISTS public.add_id_usertg(character varying, character varying);
+
+CREATE OR REPLACE PROCEDURE public.add_id_usertg(
+	IN login_user character varying,
+	IN telegram_id character varying)
+LANGUAGE 'sql'
+AS $BODY$
+
+	UPDATE users_tgb 
+	SET id_telegram = $2
+	WHERE login_tgb = $1;
+
+$BODY$;
+ALTER PROCEDURE public.add_id_usertg(character varying, character varying)
+    OWNER TO postgres;
+
+
+
+-- PROCEDURE: public.add_document(integer, integer, date)
+
+-- DROP PROCEDURE IF EXISTS public.add_document(integer, integer, date);
+
+CREATE OR REPLACE PROCEDURE public.add_document(
+	IN var_session_id integer,
+	IN var_student_id integer,
+	IN var_date_document date)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN 
+	INSERT INTO stored_documents (session_id, student_id, date_document)
+	VALUES($1, $2, $3);
+END;
+$BODY$;
+ALTER PROCEDURE public.add_document(integer, integer, date)
+    OWNER TO postgres;
