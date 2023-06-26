@@ -2,7 +2,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, Text
-from core.handlers.basic import get_start, get_doc_help_call, get_help, get_contacts
+from core.handlers.basic import get_start, get_doc_help_call, get_help, get_contacts, get_plan_lessons
 from core.settings import settings
 from core.utils.commands import set_commands
 from core.middleware.dbmiddleware import DbSession
@@ -41,7 +41,7 @@ async def start():
     dp.message.register(identification.get_password, StepsIdentification.GET_PASSWORD)
     dp.message.register(identification.get_telegram_id, Text(text="Пройти идентификацию"))
     dp.message.register(get_doc_help_call, Text(text="Получить справку-вызов на следующую сессию"))
-
+    dp.message.register(get_plan_lessons, Text(text="Получить расписание занятий на сессию"))
 
     dp.message.register(get_start, Command(commands=['start', 'run']))
     dp.message.register(get_contacts, Command(commands=['contacts']))

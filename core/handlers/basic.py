@@ -44,4 +44,4 @@ async def get_contacts(message: Message):
     )
 
 async def get_plan_lessons(message: Message):
-    await message.reply(f'Модуль разработке...')
+    await message.reply_sticker(r'CAACAgIAAxkBAAJY4mSCAROHKmnsm2rPnwxn8KzDfwiKAAIhDQACVCAISjI6cvLpMDtzLwQ')
